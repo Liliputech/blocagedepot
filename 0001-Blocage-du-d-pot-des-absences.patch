@@ -1,0 +1,463 @@
+From cb2ed44cc709b9000978c9aca3d1fad36b885d83 Mon Sep 17 00:00:00 2001
+From: kohamaster <preprod@kohaVM>
+Date: Wed, 16 Mar 2016 13:40:23 +0100
+Subject: [PATCH] =?UTF-8?q?Blocage=20du=20d=C3=A9pot=20des=20absences?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ absences/ajax.control.php           |   35 ++++++++++++---------------
+ absences/js/modif.js                |   32 ++++++++++++-------------
+ authentification.php                |   19 +++++++++------
+ planning/poste/ajax.tmplock.php     |   13 +++++-----
+ planning/poste/index.php            |   45 +++++++++++++++++++++--------------
+ planning/poste/js/planning.js       |   38 +++++++++++++++++++++++++++++
+ themes/default/default.css          |   27 ++++++++++++---------
+ themes/default/images/tmplock.png   |  Bin 891 -> 1673 bytes
+ themes/default/images/tmpunlock.png |  Bin 913 -> 1643 bytes
+ 9 files changed, 130 insertions(+), 79 deletions(-)
+
+diff --git a/absences/ajax.control.php b/absences/ajax.control.php
+index fb15e18..a635f0e 100644
+--- a/absences/ajax.control.php
++++ b/absences/ajax.control.php
+@@ -57,23 +57,18 @@ if($config['Absences-apresValidation']==0){
+       }
+     }
+   }
+-  if(!empty($datesValidees)){
+-    $result["planning"]=join(" ; ",$datesValidees);
+-  }
+-}
+-
+-// Contrôle si placé sur planning en cours d'élaboration;
+-$result["planningVide"]=0;
+-if($config['Absences-planningVide']==0){
+-  $debut=substr($debut,0,10);
+-  $fin=substr($fin,0,10);
+-  $db=new db();	  
+-  $req="SELECT COUNT(`id`) as `cnt` FROM `{$dbprefix}pl_poste` WHERE `date` BETWEEN '$debut' AND '$fin';";
+-  $db->query($req);
+-  if($db->result){
+-    $result["planningVide"]=$db->result[0]['cnt'];
+-  }
+-  //for testing purpose $result["planningVide"]=1;
+-}
+-echo json_encode($result);
+-?>
++  if(!empty($datesValidees)){
++    $result["planning"]=join(" ; ",$datesValidees);
++  }
++}
++
++// Controle blocage du depot d'absence
++$debut=substr($debut,0,10);
++$fin=substr($fin,0,10);
++$db=new db();
++$req="SELECT `id` FROM `{$dbprefix}pl_poste_verrou` WHERE `blocage_dep_abs`=1";
++$db->query($req);
++$result['planning_en_cours']= $db->result;
++
++echo json_encode($result);
++?>
+diff --git a/absences/js/modif.js b/absences/js/modif.js
+index 56be78b..54610f5 100644
+--- a/absences/js/modif.js
++++ b/absences/js/modif.js
+@@ -169,24 +169,24 @@ function verif_absences(ctrl_form){
+     async: false,
+     success: function(result){
+       result=JSON.parse(result);
+-      if(result["planningVide"]!=0){
+-	information("Vous essayez de placer une absence sur un planning en cours d'élaboration","error");
+-	retour=false;
+-      }
+-      else if(result["autreAbsence"]){
+-	information("Une absence est déjà enregistrée pour cet agent entre le "+result["autreAbsence"]+"<br/>Veuillez modifier les dates et horaires.","error");
+-	retour=false;
++      if(result["autreAbsence"]){
++          information("Une absence est déjà enregistrée pour cet agent entre le "+result["autreAbsence"]+"<br/>Veuillez modifier les dates et horaires.","error");
++          retour=false;
+       }
+       else if(result["planning"]){
+-	if(admin==1){
+-	  if(!confirm("Attention, l'agent sélectionné apparaît dans des plannings validés : "+result["planning"]+"\nVoulez vous continuer ?")){
+-	    retour=false;
+-	  }
+-	}
+-	else{
+-	  information("Vous ne pouvez pas ajouter d'absences pour les dates suivantes<br/>car les plannings sont validés : "+result["planning"]+"<br/>Veuillez modifier vos dates ou contacter le responsable du planning","error");
+-	  retour=false;
+-	}
++	      if(admin==1){
++	          if(!confirm("Attention, l'agent sélectionné apparaît dans des plannings validés : "+result["planning"]+"\nVoulez vous continuer ?")){
++	             retour=false;
++	          }
++	      }
++          else {
++              information("Vous ne pouvez pas ajouter d'absences pour les dates suivantes<br/>car les plannings sont validés : "+result["planning"]+"<br/>Veuillez modifier vos dates ou contacter le responsable du planning","error");
++              retour=false;
++          }
++      }
++      else if (result["planning_en_cours"] && admin != 1){
++       information("Le dépôt d'absence n'est pas possible pour l'instant.<br/>Veuillez faire votre demande par mail à spmanu@univ-lyon3.fr ou spquai@univ-lyon3.fr","error");
++        retour=false;
+       }
+     },
+     error: function(result){
+diff --git a/authentification.php b/authentification.php
+index 9aff18a..bba2dcf 100644
+--- a/authentification.php
++++ b/authentification.php
+@@ -131,13 +131,18 @@ elseif(isset($_GET['acces'])){
+   if(!isset($_GET['no_menu'])){
+     include "include/menu.php";
+     echo "<div id='acces_refuse'>Accès refusé</div>\n";
+-  }
+-}
+-elseif(array_key_exists("login_id",$_SESSION)){		//		logout
+-  include "ldap/logoutCAS.php";
+-
+-  session_destroy();
+-  echo "<script type='text/JavaScript'>location.href='authentification.php{$authArgs}';</script>";
++  }
++}
++elseif(array_key_exists("login_id",$_SESSION)){		//		logout
++	if ( $_SESSION['droits'][0]==12 ) {
++			$db=new db();
++			$perso_id=$_SESSION['login_id'];
++	        $db->delete("pl_poste_verrou","`blocage_dep_abs`= 1 and `perso2`= '$perso_id'");
++	}
++    include "ldap/logoutCAS.php";
++
++  session_destroy();
++  echo "<script type='text/JavaScript'>location.href='authentification.php{$authArgs}';</script>";
+ }
+ else{		//		Formulaire d'authentification
+   echo <<<EOD
+diff --git a/planning/poste/ajax.tmplock.php b/planning/poste/ajax.tmplock.php
+index e6f3f0a..65eaa99 100644
+--- a/planning/poste/ajax.tmplock.php
++++ b/planning/poste/ajax.tmplock.php
+@@ -5,15 +5,15 @@ Licence GNU/GPL (version 2 et au dela)
+ Voir les fichiers README.md et LICENSE
+ @copyright 2011-2016 Jérôme Combes
+ 
+-Fichier : planning/poste/ajax.validation.php
++Fichier : planning/poste/ajax.tmplock.php
+ Création : 23 février 2015
+ Dernière modification : 3 avril 2015
+ @author Jérôme Combes <jerome@planningbiblio.fr>
+ 
+ Description :
+-Permet aux administrateurs de verrouiller (et de déverrouiller) temporairement le planning du jour courant pour interdire le depot d'absences
+-*tout en continuant à travailler dessus
+-Page appelée en ajax lors du click sur les maillons de chaine de la page planning/poste/index.php
++Permet aux administrateurs de bloquer temporairement (et débloquer) le depot d'absence
++tout en gardant la possibilité de modifier le planning
++Page appelée en ajax lors du click sur le feu de signalisation de la page planning/poste/index.php
+ (événements $("#icon-tmplock").click et $("#icon-tmpunlock").click, page planning/poste/js/planning.js)
+ */
+ 
+@@ -22,18 +22,17 @@ require_once "../../include/config.php";
+ require_once "class.planning.php";
+ 
+ //~ // Initialisation des variables
+-$date=$_GET['date'];
+ $site=$_GET['site'];
+ $blocage_dep_abs=$_GET['blocage_dep_abs'];
+ $perso_id=$_SESSION['login_id'];
+ 
+ if ( $blocage_dep_abs ) {
+ 	$db=new db();
+-	$insert=array("date"=>$date, "blocage_dep_abs"=>$blocage_dep_abs, "perso2"=>$perso_id, "site"=>$site);
++	$insert=array("blocage_dep_abs"=>$blocage_dep_abs, "perso2"=>$perso_id, "site"=>$site);
+ 	$db->insert2("pl_poste_verrou",$insert);
+ } else {
+ 	$db=new db();
+-	$db->delete("pl_poste_verrou","`date`= '$date' and `blocage_dep_abs`= 1 and `perso2`= '$perso_id'");
++	$db->delete("pl_poste_verrou","`blocage_dep_abs`= 1 and `perso2`= '$perso_id'");
+ }
+ echo json_encode(1);
+ exit;
+diff --git a/planning/poste/index.php b/planning/poste/index.php
+index f9f1509..8e0d4d1 100644
+--- a/planning/poste/index.php
++++ b/planning/poste/index.php
+@@ -128,15 +128,21 @@ if($db->result){
+   $perso2=nom($db->result[0]['perso2']);
+   $date_validation=dateFr(substr($db->result[0]['validation'],0,10));
+   $heure_validation=substr($db->result[0]['validation'],11,5);
+-  $date_validation2=dateFr(substr($db->result[0]['validation2'],0,10));
+-  $heure_validation2=substr($db->result[0]['validation2'],11,5);
+-  $validation2=$db->result[0]['validation2'];
+-}else{
+-  $perso2=null;
+-  $date_validation2=null;
++  $date_validation2=dateFr(substr($db->result[0]['validation2'],0,10));
++  $heure_validation2=substr($db->result[0]['validation2'],11,5);
++  $validation2=$db->result[0]['validation2'];
++}else{
++  $perso2=null;
++  $date_validation2=null;
+   $heure_validation2=null;
+   $validation2=null;
+ }
++
++// -----------------------------       Blocage du dépôt d'absences     ---------------------------------//
++$blocage_dep_abs = 0;
++$db=new db();
++$db->select2("pl_poste_verrou","*", array("site"=>$site,"blocage_dep_abs"=>1));
++if ($db->result) $blocage_dep_abs = 1;
+ //	---------------		FIN changement de couleur du menu et de la periode en fonction du jour sélectionné	--------------------------//
+ 
+ //	Selection des messages d'informations
+@@ -226,14 +232,17 @@ if($autorisation and $config['CatAFinDeService']){
+ }
+ 
+ echo "<div id='validation'>\n";
+-if($autorisation){
+-  $display1=$verrou?null:"display:none";
+-  $display2=$verrou?"display:none":null;
+-
+-  echo "<div class='pl-validation' style='$display1'><u>Validation</u><br/>$perso2 $date_validation2 $heure_validation2</div>\n";
+-  echo "<span id='icon-lock' class='pl-icon pl-icon-lock pointer' data-date='$date' data-site='$site' title='Déverrouiller le planning' style='$display1'></span></a>\n";
+-  echo "<span id='icon-unlock' class='pl-icon pl-icon-unlock pointer' data-date='$date' data-site='$site' title='Verrouiller le planning' style='$display2'></span></a>\n";
+-}
++if($autorisation){
++  $display1=$verrou?null:"display:none";
++  $display2=$verrou?"display:none":null;
++  $displaytmp1=$blocage_dep_abs?"display:none":null;
++  $displaytmp2=$blocage_dep_abs? null:"display:none";
++  echo "<div class='pl-validation' style='$display1'><u>Validation</u><br/>$perso2 $date_validation2 $heure_validation2</div>\n";
++  echo "<span id='icon-tmplock' class='pl-icon pl-icon-tmplock pointer' data-date='$date' data-site='$site' title=\"Bloquer temporairement le dépôt d'absence\" style='$displaytmp1'></span></a>\n";
++  echo "<span id='icon-tmpunlock' class='pl-icon pl-icon-tmpunlock pointer' data-date='$date' data-site='$site' title=\"Débloquer le dépôt d'absence\" style='$displaytmp2'></span></a>\n";
++  echo "<span id='icon-lock' class='pl-icon pl-icon-lock pointer' data-date='$date' data-site='$site' title='Déverrouiller le planning' style='$display1'></span></a>\n";
++  echo "<span id='icon-unlock' class='pl-icon pl-icon-unlock pointer' data-date='$date' data-site='$site' title='Verrouiller le planning' style='$display2'></span></a>\n";
++}
+ 
+ if($autorisation){
+   echo "<a href='javascript:popup(\"planning/poste/enregistrer.php&date=$date&site=$site\",500,270);' title='Enregistrer comme modèle'><span class='pl-icon pl-icon-save'></span></a>";
+@@ -826,7 +835,7 @@ EOD;
+     }
+   }
+ }
+-					//---------------	FIN Affichage des absences		-----------------//
+-?>
+-</div>
+-</div>
+\ No newline at end of file
++					//---------------	FIN Affichage des absences		-----------------//
++?>
++</div>
++</div>
+diff --git a/planning/poste/js/planning.js b/planning/poste/js/planning.js
+index 046f9b8..948d07e 100644
+--- a/planning/poste/js/planning.js
++++ b/planning/poste/js/planning.js
+@@ -145,6 +145,44 @@ $(function() {
+     });
+   });
+ 
++   $("#icon-tmplock").click(function(){
++    var date=$(this).attr("data-date");
++    var site=$(this).attr("data-site");
++
++    $.ajax({
++      url: "planning/poste/ajax.tmplock.php",
++      dataType: "json",
++      data: {date: date, site: site, blocage_dep_abs: 1 },
++      type: "get",
++      success: function(result){
++	  $("#icon-tmplock").hide();
++	  $("#icon-tmpunlock").show();
++	},
++      error: function(result){
++	information("Erreur lors du blocage du depot d'absence","error");
++      }
++    });
++  });
++
++   $("#icon-tmpunlock").click(function(){
++    var date=$(this).attr("data-date");
++    var site=$(this).attr("data-site");
++
++    $.ajax({
++      url: "planning/poste/ajax.tmplock.php",
++      dataType: "json",
++      data: {date: date, site: site, blocage_dep_abs: 0 },
++      type: "get",
++      success: function(result){
++	  $("#icon-tmpunlock").hide();
++	  $("#icon-tmplock").show();
++	},
++      error: function(result){
++	information("Erreur lors du déblocage du depot d'absence","error");
++      }
++    });
++  });
++
+   // Calendar
+   $("#pl-calendar").change(function(){
+     var date=dateFr($(this).val());
+diff --git a/themes/default/default.css b/themes/default/default.css
+index 7df3ee8..7a8f340 100644
+--- a/themes/default/default.css
++++ b/themes/default/default.css
+@@ -144,13 +144,18 @@ h3{
+   background:url("images/hide.png") no-repeat center;
+ }
+ 
+-.pl-icon-lock {
+-  background:url("images/lock.png") no-repeat center;
+-}
+-
+-.pl-icon-logout {
+-  background:url("images/logout.png") no-repeat center;
+-}
++.pl-icon-lock {
++  background:url("images/lock.png") no-repeat center;
++}
++.pl-icon-tmplock {
++  background:url("images/tmplock.png") no-repeat center;
++}
++.pl-icon-tmpunlock {
++  background:url("images/tmpunlock.png") no-repeat center;
++}
++.pl-icon-logout {
++  background:url("images/logout.png") no-repeat center;
++}
+ 
+ .pl-icon-open {
+   background:url("images/open.png") no-repeat center;
+@@ -966,7 +971,7 @@ option.bold{
+   font-size:9pt;
+ }
+ 
+-/*	Congés	*/
+-#tableConges td{
+-  white-space: nowrap;
+-}
+\ No newline at end of file
++/*	Congés	*/
++#tableConges td{
++  white-space: nowrap;
++}
+diff --git a/themes/default/images/tmplock.png b/themes/default/images/tmplock.png
+index b3876feae2d54d6894a65b9dd42aa16f2fb56fb9..bd53d899900552b375c11511c23fae226150da69 100644
+GIT binary patch
+delta 1657
+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
+DIHWV@
+
+delta 869
+zcmV-r1DgDa4f_U=BYy)zNkl<Zcmd6q1FURE7{@nhP&ce?9@Ms?+UDY@Zo}F(g4(ui
+z+qyQN{eJB~Q%!p2W}fet?C#l_GvDvis4^?EQI&Or1}B6mkA^8tamGY_^sF}Z>7B~l
+zlx2=&v7pAGVakh9%HSpiY?4Eq*&ns3Pw(hmjnUXSf^VF#XMddVfs}8262unR@iFhB
+zF&Zl!vkYGGKo$v8F5Nh1ioCKR{vVB%4(XCkFZk+JmWmP{@%Gp=BGM_{Bf^)jvS^fI
+z;Mv^$NT+m*;WQvjxNLUe8zvAW=6QpLVC6=LQ40T4!R}GY)Y*ZrTZe-#fOo!x-#g&8
+zr%iiUVuToCS%2_Nsw^6&d^kG=x4z)#Lt77)JoY9;B}Rx5iuK=A1SyBi4qPEW@O)_P
+zM#9iIc<T$x2;+5$5kZ|p4E;bBiZWiB9Rrl><FABq6Jf$+IQ<q_rv~@F1T$s;C>?t5
+z{|1ODb|p+%J5CthB%d|U71}LNhBZ%w#x-!}t)>>#zJGQVUj76mzqgk}AO|s{g0(79
+zgA<JR{yE?K9C+h%Xz7OgURJw2|Mxe$7P<!jRG2cje325n5+pn(i+thxoeRHrV##Zt
+z!q%r4&(rH*a4bkV`rzOT9R}newo=d(=l<}f4v-9wgI7$L`K}4JItA+2*zhARR$AOE
+zq}Y`>Wq*>-Jm2peGsh)kC%~yUnfzb=0PK1e)UN&)-r0|V*GASWwrzmJb4|78Zjg)_
+z2kG^&&1ojQ%Nz~a^(G>c_8vIoLYL<y2G}WZz`OpP=Yns4I(+r3@${O9VbBNeNP)8m
+zRXF>fYr~7{VYTBGUi06G4R?gyU4(JM@tYLo27kQ!H4?f9Ro(VfJMn60>V%1tO%WdK
+z2e+o7*cB}Xu7#+r7r-nknqpyUcD)_XfOV=S6^C7<8K8E5xU~?umSQcRcfAN;mQ^jU
+zf}VV%Nz1u+=p6%&QV+0WDRyo~Qo3mY&%TEd;LXorU<`m+1r>qN6Yk!O+}p8~D_k<d
+zl3v~+Gw%bhu)DWouLDVFBEdZ`LVGWK@&g=wsei#a4<!CaG7U2M-pp9<S#aJ*GXFzq
+vl+K+)=_ojskAjQIsJNPq{>$n7xSsz3aU<USjqs1)00000NkvXXu0mjfcSo<n
+
+diff --git a/themes/default/images/tmpunlock.png b/themes/default/images/tmpunlock.png
+index 5a1478f96e9572ec75dc8ec9d9d5956478029411..fd00be29e74da07a198a59c068659d27d4ea1406 100644
+GIT binary patch
+delta 1627
+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
+ZFaRa+Pc+6LW_$nu002ovPDHLkV1k3@5Apy2
+
+delta 891
+zcmV->1BCqR43P(rBYy)}Nkl<Zcmc(i0}MS!5Qi^mP&ce?Jij=#9o6Q;z1p@B)V6K6
+zL2cXSU$wv9S8Vc<yUo_WWRktznfcA`%<k=Ge+Km)i#CRA(;RVCA#b*~<7>sXeU7P<
+z{gaqwQ>JV5*{~qEtu<m|cL(Th4+Zg<*yor!>T09y-y-kitbf|hc~Iw_9ibhFBl5eh
+zHrndrPZQ6%F4Hte9M##L@0?W`Q87*{9t_&*Ltpw#BA>s<Os$+NV>6a~#XW7i<Y_CS
+zPkl$pXYVm>Yb1Hx>B8H>$=AXqcR?*TAp7H@PkqagRiT-4bc9?7EIxp_wuCcp1aaj(
+zV7?o9S`c!Sl7H87RxSv>uQIOvPO$4KaPtH3=_CT~dJLA`Et-xXa>zAC-Yu4;IpU$J
+zf?Hw;YaIahJq<toL@5lak*5`=Tylm08Y4D{k*{|cy!{bl_~AzaUVRTXJ2I&jLJ*As
+z8~nz;E>jgz-(D7g4qe)p-zMOV_hH|&;Nm+GJn=HDx__^=p-p-Ka>|_*Bn!85CYPOV
+zI=%P~0`7mtfMAx*EkbzY1z2iVS1FxbkxS0j4lI<lhHO(dd-J*W0Wj$c1h2gZ%j_nZ
+zW3a*Den+Z5VHM=g3I|u0&3@579CsOlpMQq^&VogHV*$o<p0EmXn}Rpn+m~;<yB|aF
+z-Y3pBg?}(z<di#WkNBoU!6LEvLhfr}i>1k;16XidSh!cMBX?B*O4xdLKB}{H^2LX6
+z@Of~>J#gCf@c=4Q;HmcFTfeWsvrrqRt$;cf>Z30rc=H2&MN&{zgc9EN5QvW^zzTb$
+zRlGXtY6JSvSELBrIa|9W%67pa=M!-J<sqLjQGZ9>0Db7IY#Yj*c^H%(L{_|&|L#X1
+zCQO0Nj&duOr@}tR)KM3-4ZElEAc`KvMt;z_@YByAKKu-JIMIH^ouPzp$J7zpXlsA;
+zD31M%RKomSbUOjxeh;1x2b=>NAAw@qKF0#I(Y6)+872IVtzeh%lxyLuZy1BKR0vQ<
+zU36`<jsK35FC;qhVA=dAxb-3UZ1UK>z_xvksiUqosTY#;E1COSS#2NK@kDd1*tRc>
+zCtS(?=B2dx``ys0S8UstdMW+e*Yb2pzm}&zOcEshVe<b!&Hn$#>Hq#b{{{O;==5V=
+RL`VPt002ovPDHLkV1jfB!94%~
+
+-- 
+1.7.10.4
+
