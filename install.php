@@ -33,10 +33,10 @@ $sql=array();
 $sql[] = "ALTER TABLE `{$dbprefix}pl_poste_verrou` ADD `blocage_dep_abs` INT(1) NOT NULL DEFAULT '0' AFTER `perso`;";
 
 // Droits d'accès
-$sql[]="INSERT INTO `{$dbprefix}acces` (`nom`,`groupe_id`,`page`) VALUES ('Blocage des d&eacutepots','100','plugins/blocagedepot/index.php');";
+$sql[]="INSERT INTO `{$dbprefix}acces` (`nom`,`groupe_id`,`page`) VALUES ('Blocage des d&eacutepots','12','plugins/blocagedepot/index.php');";
 
 // Menu
-$sql[]="INSERT INTO `{$dbprefix}menu` (`niveau1`,`niveau2`,`titre`,`url`) VALUES (15,0,'Bloquer/D&eacute;bloquer','plugins/blocagedepot/index.php');";
+$sql[]="INSERT INTO `{$dbprefix}menu` (`niveau1`,`niveau2`,`titre`,`url`) VALUES (10,40,'Bloquer/D&eacute;bloquer','plugins/blocagedepot/index.php');";
 
 // Inscription du plugin dans la base
 $sql[]="INSERT INTO `{$dbprefix}plugins` (`nom`,`version`) VALUES ('blocagedepot','$version');";
