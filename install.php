@@ -23,7 +23,7 @@ if($_SESSION['login_id']!=1){
   exit;
 }
 
-$version="1";
+$version="1.0";
 include_once "../../include/config.php";
 
 $sql=array();
