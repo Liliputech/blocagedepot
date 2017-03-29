@@ -3,7 +3,7 @@
 Planning Biblio, Plugin BlocageDepots Version 1
 Licence GNU/GPL (version 2 et au dela)
 Voir les fichiers README.md et LICENSE
-@copyright 2013-2017 Arthur Suzuki
+@copyright 2013-2017 Jerome Combe
 
 Fichier : plugins/blocagedepot/install.php
 Création : 27 mars 2017
