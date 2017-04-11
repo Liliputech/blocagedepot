@@ -17,11 +17,8 @@ Accessible par le menu Absences
 Inclus dans le fichier index.php
 */
 
-if(!strstr($_SERVER['SCRIPT_NAME'],"cron.ctrlPlanning.php")){
-  $path=substr($_SERVER['SCRIPT_NAME'],-9)=="index.php"?null:"../../";
-  $path=substr($_SERVER['SCRIPT_NAME'],-16)=="ics/calendar.php"?"../":$path;
-  require_once "${path}include/config.php";
-}
+$root= strstr(__DIR__,"plugins",TRUE);
+require_once "$root/include/config.php";
 
 class blocagedepot {
    public $date=null;
@@ -31,7 +28,7 @@ class blocagedepot {
    //Get current lock state
    public function get(){
        $db=new db;
-       $db->select2("pl_poste_verrou","*",array("date"=>$this->date, "site"=>$this->site));
+       $db->select2("pl_poste_verrou","*",array("date"=>$this->date, "site"=>$this->site, "blocage_dep_abs"=>1));
        // si le planning du jour est verrouillé on sort 1
        if ($db->result ) return 1;
        // sinon on sort 0
