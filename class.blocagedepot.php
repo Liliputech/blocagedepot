@@ -37,20 +37,29 @@ class blocagedepot {
 
    //Toggle lock state
    public function toggle(){
-       $lastlock=$this->get($this->date,$this->site);
+       $lastlock=$this->get();
        $db=new db;
        if ($lastlock == 1) $db->delete("pl_poste_verrou","`date`= '$this->date' and `blocage_dep_abs`= 1 and `perso2`= '$this->perso_id'");
        else $db->insert2("pl_poste_verrou",array("date"=>$this->date, "blocage_dep_abs"=>"1", "perso2"=>$this->perso_id, "site"=>$this->site));
-       if ( $lastlock != $this->get($this->date,$this->site) ) return 1; //Success
+       if ( $lastlock != $this->get() ) return 1; //Success
        else return 0; //Failure
    }
    
+   public function controleAbsences(&$data){
+	$this->date = date("y-m-d",strtotime($data["date"]));
+	//Test si les dépots d'absences sont bloqués pour cette date
+	if($this->get()) {
+		$data["admin"] = "Le dépot d'absence est verrouillé pour le $this->date.\nEnregistrer l'absence malgré tout?";
+		$data["info"] = "Le dépot d'absence est verrouillé pour le $this->date.\nMerci de prendre contact avec les responsables du Planning.";
+	}
+   }
+
    function updateDB($oldVersion,$newVersion){
         $sql=array();   // Liste des requêtes SQL à executer
         $dbprefix=$GLOBALS['config']['dbprefix'];
         $version=$oldVersion;
 
-        echo "Mise à jour du plugin iBlocage Dépot : $oldVersion -> $newVersion<br/>";
+        echo "Mise à jour du plugin Blocage Dépot : $oldVersion -> $newVersion<br/>";
         $version="1.0";
         foreach($sql as $elem){
           $this->db->query($elem);
