@@ -39,8 +39,10 @@ class blocagedepot {
    public function toggle(){
        $lastlock=$this->get();
        $db=new db;
-       if ($lastlock == 1) $db->delete("pl_poste_verrou","`date`= '$this->date' and `blocage_dep_abs`= 1 and `perso2`= '$this->perso_id'");
-       else $db->insert2("pl_poste_verrou",array("date"=>$this->date, "blocage_dep_abs"=>"1", "perso2"=>$this->perso_id, "site"=>$this->site));
+       $db2=new db;
+       $db->select2("pl_poste_verrou","*",array("date"=>$this->date, "site"=>$this->site));
+       if ($db->result) $db2->update("pl_poste_verrou","`blocage_dep_abs`= NOT `blocage_dep_abs`","`date`='$this->date' and `site`='$this->site'");
+       else $db2->insert2("pl_poste_verrou",array("date"=>$this->date, "blocage_dep_abs"=>"1", "perso2"=>$this->perso_id, "site"=>$this->site));
        if ( $lastlock != $this->get() ) return 1; //Success
        else return 0; //Failure
    }
